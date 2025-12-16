@@ -55,7 +55,7 @@ public:
     std::vector<std::string> vec;
     std::string s = "hello";
     vec.push_back(s);//拷贝构造
-    vec.push_back(std::move(s));//移动构造，与vec.emplace_back(s)是等价的
+    vec.push_back(std::move(s));//移动构造，与vec.emplace_back(s)在效果上是等价的
     前者是将s拷贝一份并尾插到了s后，后者是直接在vec原地将s尾插，避免了中间的拷贝，也就是说，在尾插元素是内置类型的情况下，push_back与emplace_back在性能方面几乎没有差别，但在自定义类型的情况下，emplace_back性能是要强于push_back的
   3. 资源转移（RAII 场景）
     std::unique_ptr<int> p1 = std::make_unique<int>(10);
