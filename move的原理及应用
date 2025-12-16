@@ -51,13 +51,69 @@ public:
       return v; 
     }
     这里你可能会认为会返回v对象的拷贝，实际上编译器对其做了优化，实际上返回的是move(v),然后调用移动构造绑定到左值，这样就避免了拷贝
-    2. 容器插入与 emplace
+  2. 容器插入与 emplace
     std::vector<std::string> vec;
     std::string s = "hello";
     vec.push_back(s);//拷贝构造
     vec.push_back(std::move(s));//移动构造，与vec.emplace_back(s)是等价的
     前者是将s拷贝一份并尾插到了s后，后者是直接在vec原地将s尾插，避免了中间的拷贝，也就是说，在尾插元素是内置类型的情况下，push_back与emplace_back在性能方面几乎没有差别，但在自定义类型的情况下，emplace_back性能是要强于push_back的
+  3. 资源转移（RAII 场景）
+    std::unique_ptr<int> p1 = std::make_unique<int>(10);
+    std::unique_ptr<int> p2 = std::move(p1);
+    乍一看你可能会很难理解，unique_ptr不是禁止拷贝吗？实际上它确实是有一个“短暂窗口”会同时指向同一份资源，只不过在移动构造时被处理掉了（即将p1置空），最终效果还是没有破坏unique_ptr的定义
+
+六、万能引用、完美转发与 move 的关系
+  1. 万能引用
+    template <typename T>
+    void func(T&& arg);
+  这种设计十分巧妙，如果我传递的是T&/T,编译器会自动识别为void func(T& arg);
+  但我如果传递的是T&&,则会识别为void func(T&& arg)
+  2. 为什么不能直接 std::move？
+    template <typename T>
+    void wrapper(T&& arg) {
+    foo(std::move(arg)); // ❌ 强制右值
+  }
+  乍一看可能没什么错误，但我们可以设想一种调用情况
+  std::string s = "hello";
+  wrapper(s);
+  这里就会出现一个问题，你将s给move掉了，这里主要问题是你看似传的是s的形参，但在wrapper函数中，它会识别你传的变量是左值引用，即T&，然后在将其强制转为右值，于是便造成了这一问题
+  正确方式则为：
+    template <typename T>
+    void wrapper(T&& arg) {
+    foo(std::forward<T>(arg)); 
+  }
+  这里forward就叫做完美转发，它将arg的左右值属性保留了下来，在这里我们arg是左值，那么传进去的类型也就自然是左值了，之后的foo函数的一些拷贝操作也就不会影响s的成员变量了
+
+七、常见误区
+  1.对仍需使用的对象调用 std::move
+    这个也很好理解，你将原对象move之后，内部的资源会改变（一般是清空）
+  2.在 return 语句中滥用 std::move
+    其实这个并不是禁止，而是没必要，让我们看一组简单的示例:
+  template<class T>
+  T f() {
+      T x;
+      return x;
+  }
+  这个我上面也讲过了，但是有一些底层细节需要澄清一下
+  C++11之后会做一种优化，叫做NRVO（命名返回值优化），这个优化的规定是这样的:当你返回一个局部变量时，编译器会直接用x去构造新对象的，这个操作是零成本的，没有任何消耗
+  但这并不是每次都能成功的，当NRVO失败时，编译器才会自动调用移动构造，即return move(x)
+  但如果你显示写return move(x)的话，你就显示指定必须有移动构造，此时编译器不会调用NRVO,只会调用移动构造，虽然移动构造成本低，但性能仍不如NRVO，这常常被视为一种性能的退化，所以没有必要去显示调用，这种事情就交给编译器自己去处理就好了
+  3.对 const 对象使用 std::move
+    举个例子:
+  const std::string s = "abc";
+  auto x = std::move(s); 
+  这个操作是否有可能编译错误呢？这就在于你移动构造函数的设计了，我相信大多数设计都诸如T(T&&),而不是T(const T&&),因为移动构造通常都要修改原对象
+
+八、总结
+  通过本文相信你也了解了move的底层原理和用法，下面让我们总结一下，首先std::move的本质是类型转换，而不是移动，其次我们也了解了move的价值在于配合移动构造/赋值以拥有更佳的性能，同时也相比传统写法的语义更清晰可读，正确使用move的关键就在于理解对象move后的值类别与被move对象后的状态
+
+  
     
+
+
+
+
+
 
 
 
